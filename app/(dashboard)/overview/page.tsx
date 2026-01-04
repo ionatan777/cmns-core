@@ -14,24 +14,34 @@ const financialSummary = {
     ],
 }
 
-const alerts = [
+type AlertType = 'info' | 'success' | 'warning' | 'error'
+
+type Alert = {
+    id: string
+    type: AlertType
+    title: string
+    message: string
+    action: { label: string; href: string } | null
+}
+
+const alerts: Alert[] = [
     {
         id: '1',
-        type: 'warning' as const,
+        type: 'warning',
         title: '⚠️ Neto Semanal Bajo Meta',
         message: '$210/semana vs meta de $250/semana. Necesitas $40 más esta semana.',
         action: { label: 'Ver Transacciones', href: '/finance/transactions' },
     },
     {
         id: '2',
-        type: 'info' as const,
+        type: 'info',
         title: '🎓 Universidad: Ritmo Semanal',
         message: 'Necesitas $200/semana para alcanzar $3000 en Marzo 2026 (8 semanas restantes).',
         action: { label: 'Ver Fondos', href: '/finance/funds' },
     },
     {
         id: '3',
-        type: 'success' as const,
+        type: 'success',
         title: '✅ Reposición Camvys OK',
         message: 'Tienes $450 asignados. Tope mensual: $115. Estás dentro del límite.',
         action: null,

@@ -1,13 +1,25 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
+
+// Crear cliente de Supabase directamente (sin cookies)
+function getSupabaseClient() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    if (!url || !key) {
+        throw new Error('Supabase credentials not configured')
+    }
+
+    return createSupabaseClient(url, key)
+}
 
 // GET - Listar todos los usuarios
 export async function GET() {
     try {
-        const supabase = await createClient()
+        const supabase = getSupabaseClient()
 
-        // Obtener usuarios de la tabla app_users (nuestra tabla propia)
+        // Obtener usuarios de la tabla app_users
         const { data: users, error } = await supabase
             .from('app_users')
             .select('*')
@@ -49,7 +61,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'La contraseña debe tener al menos 6 caracteres' }, { status: 400 })
         }
 
-        const supabase = await createClient()
+        const supabase = getSupabaseClient()
 
         // Verificar si el email ya existe
         const { data: existing } = await supabase

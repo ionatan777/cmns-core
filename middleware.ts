@@ -54,22 +54,23 @@ export async function middleware(request: NextRequest) {
         }
     )
 
-    const {
-        data: { user },
-    } = await supabase.auth.getUser()
+    // TEMPORARY: Authentication disabled for testing
+    // const {
+    //     data: { user },
+    // } = await supabase.auth.getUser()
 
-    // If user is not signed in and trying to access protected routes
-    const publicPaths = ['/login', '/debug-access']
-    const isPublicPath = publicPaths.some(path => request.nextUrl.pathname.startsWith(path))
+    // // If user is not signed in and trying to access protected routes
+    // const publicPaths = ['/login', '/debug-access']
+    // const isPublicPath = publicPaths.some(path => request.nextUrl.pathname.startsWith(path))
 
-    if (!user && !isPublicPath) {
-        return NextResponse.redirect(new URL('/login', request.url))
-    }
+    // if (!user && !isPublicPath) {
+    //     return NextResponse.redirect(new URL('/login', request.url))
+    // }
 
-    // If user is signed in and trying to access login page
-    if (user && request.nextUrl.pathname === '/login') {
-        return NextResponse.redirect(new URL('/overview', request.url))
-    }
+    // // If user is signed in and trying to access login page
+    // if (user && request.nextUrl.pathname === '/login') {
+    //     return NextResponse.redirect(new URL('/overview', request.url))
+    // }
 
     return response
 }

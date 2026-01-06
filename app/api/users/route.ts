@@ -1,48 +1,30 @@
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { query, queryOne } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-
-// Crear cliente de Supabase directamente (sin cookies)
-function getSupabaseClient() {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-    if (!url || !key) {
-        throw new Error('Supabase credentials not configured')
-    }
-
-    return createSupabaseClient(url, key)
-}
 
 // GET - Listar todos los usuarios
 export async function GET() {
     try {
-        const supabase = getSupabaseClient()
+        const users = await query(`
+            SELECT id, email, name, role, status, created_at, updated_at, last_login_at
+            FROM app_users
+            ORDER BY created_at DESC
+        `)
 
-        // Obtener usuarios de la tabla app_users
-        const { data: users, error } = await supabase
-            .from('app_users')
-            .select('*')
-            .order('created_at', { ascending: false })
-
-        if (error) {
-            console.error('Error fetching users:', error)
-
-            // Si la tabla no existe, devolver array vacío
-            if (error.code === '42P01') {
-                return NextResponse.json({
-                    users: [],
-                    message: 'Tabla app_users no encontrada. Ejecuta la migración.',
-                    needsMigration: true
-                })
-            }
-            return NextResponse.json({ error: error.message, users: [] }, { status: 500 })
-        }
-
-        return NextResponse.json({ users: users || [] })
+        return NextResponse.json({ users })
 
     } catch (error: any) {
         console.error('Error in GET /api/users:', error)
+
+        // Si la tabla no existe, devolver mensaje para crear
+        if (error.message?.includes('does not exist')) {
+            return NextResponse.json({
+                users: [],
+                message: 'Tabla app_users no encontrada. Ejecuta la migración.',
+                needsMigration: true
+            })
+        }
+
         return NextResponse.json({ error: error.message, users: [] }, { status: 500 })
     }
 }
@@ -61,45 +43,26 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'La contraseña debe tener al menos 6 caracteres' }, { status: 400 })
         }
 
-        const supabase = getSupabaseClient()
-
         // Verificar si el email ya existe
-        const { data: existing } = await supabase
-            .from('app_users')
-            .select('id')
-            .eq('email', email.toLowerCase())
-            .single()
+        const existing = await queryOne(`SELECT id FROM app_users WHERE email = $1`, [email.toLowerCase()])
 
         if (existing) {
             return NextResponse.json({ error: 'El email ya está registrado' }, { status: 400 })
         }
 
-        // Crear usuario en nuestra tabla propia
+        // Hash simple de contraseña (en producción usar bcrypt)
+        const passwordHash = Buffer.from(password).toString('base64')
         const userId = uuidv4()
         const now = new Date().toISOString()
 
-        // Hash simple de contraseña (en producción usar bcrypt)
-        const passwordHash = Buffer.from(password).toString('base64')
+        // Insertar usuario
+        await query(`
+            INSERT INTO app_users (id, email, password_hash, name, role, status, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, 'active', $6, $6)
+        `, [userId, email.toLowerCase(), passwordHash, name || '', role || 'user', now])
 
-        const { data: newUser, error: insertError } = await supabase
-            .from('app_users')
-            .insert({
-                id: userId,
-                email: email.toLowerCase(),
-                password_hash: passwordHash,
-                name: name || '',
-                role: role || 'user',
-                status: 'active',
-                created_at: now,
-                updated_at: now
-            })
-            .select()
-            .single()
-
-        if (insertError) {
-            console.error('Insert error:', insertError)
-            return NextResponse.json({ error: insertError.message }, { status: 400 })
-        }
+        // Obtener usuario creado
+        const newUser = await queryOne(`SELECT * FROM app_users WHERE id = $1`, [userId])
 
         return NextResponse.json({
             success: true,

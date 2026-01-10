@@ -14,7 +14,7 @@ export function getDb() {
 // Helper para ejecutar queries
 export async function query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
     const db = getDb()
-    const result = await db(sql, params)
+    const result = await db(sql as any, params)
     return result as T[]
 }
 

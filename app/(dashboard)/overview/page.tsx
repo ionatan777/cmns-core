@@ -72,6 +72,62 @@ export default function OverviewPage() {
     // Find Debt Fund status
     const debtFund = funds.find(f => f.name === 'Deuda')
 
+    const handleResetData = async () => {
+        if (!confirm('¿Estás SEGURO? Esto borrará TODAS las transacciones y reseteará el sistema a: $0 Saldo, $4k Deuda, $110 Inversión.')) return
+
+        try {
+            const supabase = createClient()
+
+            // 1. Delete all transactions (cascade should handle splits if configured, otherwise delete splits first)
+            // Note: RLS must allow this.
+            const { error: txError } = await supabase.from('transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+            if (txError) throw txError
+
+            // 2. Reset Accounts
+            const { error: accError } = await supabase.from('accounts').update({ balance: 0 }).neq('id', '00000000-0000-0000-0000-000000000000')
+            if (accError) throw accError
+
+            // 3. Update Debt Goal
+            await supabase.from('funds').update({ goal_amount: 4000 }).eq('name', 'Deuda')
+
+            // 4. Create Initial Seed Transaction ($110 Income)
+            // First get account & fund IDs
+            const { data: accounts } = await supabase.from('accounts').select('id').eq('type', 'cash').limit(1)
+            const { data: funds } = await supabase.from('funds').select('id').eq('name', 'Capital de Inversión').limit(1)
+
+            if (accounts?.[0] && funds?.[0]) {
+                // Create Transaction
+                const { data: tx, error: seedError } = await supabase.from('transactions').insert({
+                    amount: 110,
+                    type: 'income',
+                    category: 'Capital Inicial',
+                    note: 'Semilla inicial (Neto Semanal)',
+                    date: new Date().toISOString(),
+                    account_id: accounts[0].id
+                }).select().single()
+
+                if (seedError) throw seedError
+
+                // Update Account Balance
+                await supabase.from('accounts').update({ balance: 110 }).eq('id', accounts[0].id)
+
+                // Create Split
+                await supabase.from('transaction_splits').insert({
+                    transaction_id: tx.id,
+                    fund_id: funds[0].id,
+                    amount: 110
+                })
+            }
+
+            alert('Sistema reseteado correctamente. Recargando...')
+            window.location.reload()
+
+        } catch (e: any) {
+            console.error(e)
+            alert('Error al resetear: ' + e.message)
+        }
+    }
+
     return (
         <div className="flex min-h-screen flex-col">
             {/* Header */}
@@ -207,6 +263,13 @@ export default function OverviewPage() {
                             </div>
                         </div>
                     </div>
+                </div>
+
+                {/* Danger Zone */}
+                <div className="mt-8 border-t pt-8">
+                    <Button variant="destructive" size="sm" onClick={handleResetData}>
+                        ⚠️ Resetear Datos del Sistema
+                    </Button>
                 </div>
             </div>
         </div>

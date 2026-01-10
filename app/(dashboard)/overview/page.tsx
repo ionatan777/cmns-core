@@ -1,55 +1,76 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 
-// Mock data - will be replaced with real Supabase data
-const financialSummary = {
-    total_balance: 3450.00,
-    weekly_net: 210.00,
-    weekly_target: 250.00,
-    accounts: [
-        { name: 'Banco Principal', balance: 2500.00 },
-        { name: 'Efectivo', balance: 450.00 },
-        { name: 'Banco Camvys', balance: 500.00 },
-    ],
-}
-
-type AlertType = 'info' | 'success' | 'warning' | 'error'
-
-type Alert = {
-    id: string
-    type: AlertType
-    title: string
-    message: string
-    action: { label: string; href: string } | null
-}
-
-const alerts: Alert[] = [
-    {
-        id: '1',
-        type: 'warning',
-        title: '⚠️ Neto Semanal Bajo Meta',
-        message: '$210/semana vs meta de $250/semana. Necesitas $40 más esta semana.',
-        action: { label: 'Ver Transacciones', href: '/finance/transactions' },
-    },
-    {
-        id: '2',
-        type: 'info',
-        title: '🎓 Universidad: Ritmo Semanal',
-        message: 'Necesitas $200/semana para alcanzar $3000 en Marzo 2026 (8 semanas restantes).',
-        action: { label: 'Ver Fondos', href: '/finance/funds' },
-    },
-    {
-        id: '3',
-        type: 'success',
-        title: '✅ Reposición Camvys OK',
-        message: 'Tienes $450 asignados. Tope mensual: $115. Estás dentro del límite.',
-        action: null,
-    },
-]
-
 export default function OverviewPage() {
-    const netPercentage = (financialSummary.weekly_net / financialSummary.weekly_target) * 100
+    const [summary, setSummary] = useState({
+        total_balance: 0,
+        weekly_net: 0,
+        weekly_target: 250, // Meta ejemplo
+        accounts: [] as any[],
+        loading: true
+    })
+
+    const [funds, setFunds] = useState<any[]>([])
+
+    useEffect(() => {
+        const loadData = async () => {
+            const supabase = createClient()
+
+            // 1. Get Accounts & Total Balance
+            const { data: accounts } = await supabase
+                .from('accounts')
+                .select('id, name, balance, type')
+                .order('name')
+
+            const totalBalance = accounts?.reduce((sum, acc) => sum + Number(acc.balance), 0) || 0
+
+            // 2. Get Weekly Net (Income this week)
+            const startOfWeek = new Date();
+            startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay()); // Sunday
+
+            const { data: transactions } = await supabase
+                .from('transactions')
+                .select('amount, type')
+                .gte('date', startOfWeek.toISOString())
+
+            const weeklyIncome = transactions
+                ?.filter(t => t.type === 'income')
+                .reduce((sum, t) => sum + Number(t.amount), 0) || 0
+
+            const weeklyExpense = transactions
+                ?.filter(t => t.type === 'expense')
+                .reduce((sum, t) => sum + Number(t.amount), 0) || 0
+
+            const weeklyNet = weeklyIncome - weeklyExpense
+
+            // 3. Get Funds for Alerts
+            const { data: fundsData } = await supabase.from('funds').select('*')
+
+            // Calculate fund balances (simplified for UI, ideally use RPC)
+            // For now just storing funds to check "Deuda" goal
+            if (fundsData) setFunds(fundsData)
+
+            setSummary({
+                total_balance: totalBalance,
+                weekly_net: weeklyNet,
+                weekly_target: 250,
+                accounts: accounts || [],
+                loading: false
+            })
+        }
+
+        loadData()
+    }, [])
+
+    const netPercentage = (summary.weekly_net / summary.weekly_target) * 100
+
+    // Find Debt Fund status
+    const debtFund = funds.find(f => f.name === 'Deuda')
 
     return (
         <div className="flex min-h-screen flex-col">
@@ -90,53 +111,27 @@ export default function OverviewPage() {
                     </div>
                 </div>
 
-                {/* Alerts */}
-                {alerts.length > 0 && (
-                    <div className="space-y-3">
-                        <h3 className="font-semibold">🔔 Alertas</h3>
-                        {alerts.map((alert) => (
-                            <Card
-                                key={alert.id}
-                                className={
-                                    alert.type === 'warning' ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950' :
-                                        alert.type === 'error' ? 'border-red-500 bg-red-50 dark:bg-red-950' :
-                                            alert.type === 'success' ? 'border-green-500 bg-green-50 dark:bg-green-950' :
-                                                'border-blue-500 bg-blue-50 dark:bg-blue-950'
-                                }
-                            >
-                                <CardContent className="pt-4">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex-1">
-                                            <p className="font-medium">{alert.title}</p>
-                                            <p className="mt-1 text-sm opacity-80">{alert.message}</p>
-                                        </div>
-                                        {alert.action && (
-                                            <Button size="sm" variant="outline" asChild>
-                                                <a href={alert.action.href}>{alert.action.label}</a>
-                                            </Button>
-                                        )}
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
-                )}
-
                 {/* Financial Summary */}
                 <div className="grid gap-4 md:grid-cols-3">
                     <Card>
                         <CardHeader className="pb-3">
-                            <CardDescription>Saldo Total</CardDescription>
-                            <CardTitle className="text-3xl">${financialSummary.total_balance.toFixed(2)}</CardTitle>
+                            <CardDescription>Saldo Total (Activos)</CardDescription>
+                            <CardTitle className="text-3xl">
+                                {summary.loading ? '...' : `$${summary.total_balance.toFixed(2)}`}
+                            </CardTitle>
                         </CardHeader>
                         <CardContent>
                             <div className="space-y-1 text-sm">
-                                {financialSummary.accounts.map((account, i) => (
-                                    <div key={i} className="flex justify-between text-muted-foreground">
-                                        <span>{account.name}</span>
-                                        <span>${account.balance.toFixed(2)}</span>
-                                    </div>
-                                ))}
+                                {summary.loading ? (
+                                    <p className="text-muted-foreground">Cargando cuentas...</p>
+                                ) : (
+                                    summary.accounts.map((account, i) => (
+                                        <div key={i} className="flex justify-between text-muted-foreground">
+                                            <span>{account.name}</span>
+                                            <span>${Number(account.balance).toFixed(2)}</span>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </CardContent>
                     </Card>
@@ -145,15 +140,15 @@ export default function OverviewPage() {
                         <CardHeader className="pb-3">
                             <CardDescription>Neto Semanal</CardDescription>
                             <CardTitle className="text-3xl">
-                                <span className={netPercentage >= 100 ? 'text-green-600' : 'text-yellow-600'}>
-                                    ${financialSummary.weekly_net.toFixed(2)}
+                                <span className={netPercentage >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                    {summary.loading ? '...' : `$${summary.weekly_net.toFixed(2)}`}
                                 </span>
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between text-sm">
-                                    <span className="text-muted-foreground">Meta: ${financialSummary.weekly_target.toFixed(2)}</span>
+                                    <span className="text-muted-foreground">Meta: ${summary.weekly_target.toFixed(2)}</span>
                                     <Badge variant={netPercentage >= 100 ? 'default' : 'secondary'}>
                                         {netPercentage.toFixed(0)}%
                                     </Badge>
@@ -161,7 +156,7 @@ export default function OverviewPage() {
                                 <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
                                     <div
                                         className={`h-full rounded-full ${netPercentage >= 100 ? 'bg-green-500' : 'bg-yellow-500'}`}
-                                        style={{ width: `${Math.min(netPercentage, 100)}%` }}
+                                        style={{ width: `${Math.min(Math.max(netPercentage, 0), 100)}%` }}
                                     />
                                 </div>
                             </div>
@@ -170,18 +165,23 @@ export default function OverviewPage() {
 
                     <Card>
                         <CardHeader className="pb-3">
-                            <CardDescription>Acciones Rápidas</CardDescription>
+                            <CardDescription>Estado de Deuda</CardDescription>
+                            <CardTitle className="text-3xl text-red-500">
+                                {debtFund ? `$${Number(debtFund.goal_amount).toFixed(2)}` : '$0.00'}
+                            </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-2">
-                            <Button className="w-full justify-start" variant="outline" size="sm" asChild>
-                                <a href="/finance/new">+ Registrar Transacción</a>
-                            </Button>
-                            <Button className="w-full justify-start" variant="outline" size="sm" asChild>
-                                <a href="/finance/funds">📊 Ver Fondos</a>
-                            </Button>
-                            <Button className="w-full justify-start" variant="outline" size="sm" asChild>
-                                <a href="/finance/transactions">📝 Ver Historial</a>
-                            </Button>
+                            <p className="text-sm text-muted-foreground">
+                                Meta de liquidación pendiente.
+                            </p>
+                            <div className="flex gap-2">
+                                <Button className="w-full justify-start" variant="outline" size="sm" asChild>
+                                    <a href="/finance/new">+ Abonar</a>
+                                </Button>
+                                <Button className="w-full justify-start" variant="outline" size="sm" asChild>
+                                    <a href="/finance/funds">📊 Ver Detalles</a>
+                                </Button>
+                            </div>
                         </CardContent>
                     </Card>
                 </div>
@@ -196,20 +196,6 @@ export default function OverviewPage() {
                                 <p className="text-2xl font-bold">3</p>
                             </div>
                         </div>
-                        <div className="mt-4 space-y-1">
-                            <div className="flex items-center gap-2 text-sm">
-                                <span className="h-2 w-2 rounded-full bg-green-500"></span>
-                                <span>Camvys</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm">
-                                <span className="h-2 w-2 rounded-full bg-green-500"></span>
-                                <span>CodelyLabs</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm">
-                                <span className="h-2 w-2 rounded-full bg-green-500"></span>
-                                <span>Zypher</span>
-                            </div>
-                        </div>
                     </div>
 
                     <div className="rounded-lg border bg-card p-6">
@@ -217,67 +203,7 @@ export default function OverviewPage() {
                             <div className="text-2xl">🔧</div>
                             <div>
                                 <p className="text-sm font-medium text-muted-foreground">Estado del Sistema</p>
-                                <p className="text-2xl font-bold text-green-600">Operacional</p>
-                            </div>
-                        </div>
-                        <div className="mt-4">
-                            <p className="text-sm text-muted-foreground">
-                                Módulo de Finanzas activo y funcional
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="rounded-lg border bg-card p-6">
-                        <div className="flex items-center gap-2">
-                            <div className="text-2xl">📋</div>
-                            <div>
-                                <p className="text-sm font-medium text-muted-foreground">Próximos Pasos</p>
-                                <p className="text-2xl font-bold">Configurar Supabase</p>
-                            </div>
-                        </div>
-                        <div className="mt-4">
-                            <p className="text-sm text-muted-foreground">
-                                Conectar base de datos para datos reales
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Roadmap */}
-                <div className="rounded-lg border bg-card p-6">
-                    <h3 className="mb-4 text-lg font-semibold">🚀 Roadmap de Implementación</h3>
-                    <div className="space-y-3">
-                        <div className="flex items-start gap-3">
-                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-500 text-xs font-bold text-white">
-                                ✓
-                            </div>
-                            <div>
-                                <p className="font-medium">Semana 1: Base de datos + RLS + Core + Finanzas</p>
-                                <p className="text-sm text-muted-foreground">
-                                    Schema creado ✓ | Finanzas MVP ✓ | Pendiente: Conectar Supabase
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-start gap-3">
-                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-bold">
-                                2
-                            </div>
-                            <div>
-                                <p className="font-medium">Semana 3: CRM + Pipeline + Tareas</p>
-                                <p className="text-sm text-muted-foreground">
-                                    Contacts, Leads, Stages (kanban), Tasks, Plantillas
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-start gap-3">
-                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-bold">
-                                3
-                            </div>
-                            <div>
-                                <p className="font-medium">Semana 4: Proyectos + Mantenimiento</p>
-                                <p className="text-sm text-muted-foreground">
-                                    Projects, Checklist publicación, Contratos de mantenimiento
-                                </p>
+                                <p className="text-2xl font-bold text-green-600">En Línea</p>
                             </div>
                         </div>
                     </div>

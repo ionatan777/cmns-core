@@ -67,10 +67,10 @@ export async function middleware(request: NextRequest) {
     //     return NextResponse.redirect(new URL('/login', request.url))
     // }
 
-    // // If user is signed in and trying to access login page
-    // if (user && request.nextUrl.pathname === '/login') {
-    //     return NextResponse.redirect(new URL('/overview', request.url))
-    // }
+    // FORCE REDIRECT: Disable login page for single-user mode
+    if (request.nextUrl.pathname === '/login') {
+        return NextResponse.redirect(new URL('/overview', request.url))
+    }
 
     return response
 }

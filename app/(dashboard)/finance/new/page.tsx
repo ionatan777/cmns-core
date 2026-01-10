@@ -13,18 +13,76 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { createClient } from "@/lib/supabase/client"
 
 export default function NewTransactionPage() {
     const [type, setType] = useState<'income' | 'expense'>('income')
     const [amount, setAmount] = useState('')
     const [category, setCategory] = useState('')
     const [note, setNote] = useState('')
+    const [loading, setLoading] = useState(false)
 
-    const handleSubmit = (e: React.FormEvent) => {
+    // Data states
+    const [brands, setBrands] = useState<any[]>([])
+    const [accounts, setAccounts] = useState<any[]>([])
+    const [selectedBrandId, setSelectedBrandId] = useState('')
+    const [selectedAccountId, setSelectedAccountId] = useState('')
+    const [organizationId, setOrganizationId] = useState<string | null>(null)
+
+    // Load initial data
+    useState(() => {
+        const loadData = async () => {
+            const supabase = createClient()
+
+            // 1. Get Organization (simplest approach: take the first one)
+            const { data: orgs } = await supabase.from('organizations').select('id').limit(1)
+            if (orgs && orgs.length > 0) setOrganizationId(orgs[0].id)
+
+            // 2. Get Brands
+            const { data: brandsData } = await supabase.from('brands').select('id, name').order('name')
+            if (brandsData) setBrands(brandsData)
+
+            // 3. Get Accounts
+            const { data: accountsData } = await supabase.from('accounts').select('id, name, type').order('name')
+            if (accountsData) setAccounts(accountsData)
+        }
+        loadData()
+    })
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        // TODO: Implement transaction creation with Supabase
-        console.log('Creating transaction:', { type, amount, category, note })
-        alert('Funcionalidad de creación pendiente - conectar con Supabase')
+        if (!amount || !selectedAccountId || !organizationId) {
+            alert('Por favor completa los campos requeridos')
+            return
+        }
+
+        setLoading(true)
+        try {
+            const supabase = createClient()
+
+            const { data, error } = await supabase.rpc('create_transaction', {
+                p_organization_id: organizationId,
+                p_brand_id: selectedBrandId || null,
+                p_date: new Date().toISOString().split('T')[0],
+                p_type: type,
+                p_amount: parseFloat(amount),
+                p_account_id: selectedAccountId,
+                p_category: category,
+                p_note: note
+            })
+
+            if (error) throw error
+
+            alert('✅ Transacción registrada exitosamente')
+            // Reset form or redirect
+            setAmount('')
+            setNote('')
+        } catch (error: any) {
+            console.error('Error:', error)
+            alert('Error creando transacción: ' + error.message)
+        } finally {
+            setLoading(false)
+        }
     }
 
     return (
@@ -100,14 +158,16 @@ export default function NewTransactionPage() {
                                 {/* Marca */}
                                 <div className="space-y-2">
                                     <Label htmlFor="brand">Marca</Label>
-                                    <Select>
+                                    <Select value={selectedBrandId} onValueChange={setSelectedBrandId}>
                                         <SelectTrigger id="brand">
-                                            <SelectValue placeholder="Selecciona una marca" />
+                                            <SelectValue placeholder="Selecciona una marca (Opcional)" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="camvys">Camvys</SelectItem>
-                                            <SelectItem value="codelylabs">CodelyLabs</SelectItem>
-                                            <SelectItem value="zypher">Zypher</SelectItem>
+                                            {brands.map(brand => (
+                                                <SelectItem key={brand.id} value={brand.id}>
+                                                    {brand.name}
+                                                </SelectItem>
+                                            ))}
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -115,14 +175,16 @@ export default function NewTransactionPage() {
                                 {/* Cuenta */}
                                 <div className="space-y-2">
                                     <Label htmlFor="account">Cuenta</Label>
-                                    <Select>
+                                    <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
                                         <SelectTrigger id="account">
                                             <SelectValue placeholder="Selecciona una cuenta" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="bank">Banco Principal</SelectItem>
-                                            <SelectItem value="cash">Efectivo</SelectItem>
-                                            <SelectItem value="camvys-bank">Banco Camvys</SelectItem>
+                                            {accounts.map(acc => (
+                                                <SelectItem key={acc.id} value={acc.id}>
+                                                    {acc.name} ({acc.type})
+                                                </SelectItem>
+                                            ))}
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -167,8 +229,8 @@ export default function NewTransactionPage() {
 
                                 {/* Submit */}
                                 <div className="flex gap-4 pt-4">
-                                    <Button type="submit" className="flex-1" size="lg">
-                                        Registrar Transacción
+                                    <Button type="submit" className="flex-1" size="lg" disabled={loading}>
+                                        {loading ? 'Guardando...' : 'Registrar Transacción'}
                                     </Button>
                                     <Button type="button" variant="outline" asChild>
                                         <a href="/finance/transactions">Cancelar</a>

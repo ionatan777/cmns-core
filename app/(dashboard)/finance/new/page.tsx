@@ -25,8 +25,10 @@ export default function NewTransactionPage() {
     // Data states
     const [brands, setBrands] = useState<any[]>([])
     const [accounts, setAccounts] = useState<any[]>([])
+    const [funds, setFunds] = useState<any[]>([])
     const [selectedBrandId, setSelectedBrandId] = useState('')
     const [selectedAccountId, setSelectedAccountId] = useState('')
+    const [selectedFundId, setSelectedFundId] = useState('') // New: Fund Selection
     const [organizationId, setOrganizationId] = useState<string | null>(null)
 
     // Load initial data
@@ -34,7 +36,7 @@ export default function NewTransactionPage() {
         const loadData = async () => {
             const supabase = createClient()
 
-            // 1. Get Organization (simplest approach: take the first one)
+            // 1. Get Organization
             const { data: orgs } = await supabase.from('organizations').select('id').limit(1)
             if (orgs && orgs.length > 0) setOrganizationId(orgs[0].id)
 
@@ -45,6 +47,10 @@ export default function NewTransactionPage() {
             // 3. Get Accounts
             const { data: accountsData } = await supabase.from('accounts').select('id, name, type').order('name')
             if (accountsData) setAccounts(accountsData)
+
+            // 4. Get Funds (New)
+            const { data: fundsData } = await supabase.from('funds').select('id, name').order('name')
+            if (fundsData) setFunds(fundsData)
         }
         loadData()
     })
@@ -60,6 +66,7 @@ export default function NewTransactionPage() {
         try {
             const supabase = createClient()
 
+            // Call RPC with new param p_force_fund_id (requires SQL update)
             const { data, error } = await supabase.rpc('create_transaction', {
                 p_organization_id: organizationId,
                 p_brand_id: selectedBrandId || null,
@@ -68,15 +75,17 @@ export default function NewTransactionPage() {
                 p_amount: parseFloat(amount),
                 p_account_id: selectedAccountId,
                 p_category: category,
-                p_note: note
+                p_note: note,
+                p_force_fund_id: selectedFundId || null // Passing the selected fund
             })
 
             if (error) throw error
 
             alert('✅ Transacción registrada exitosamente')
-            // Reset form or redirect
             setAmount('')
             setNote('')
+            setCategory('')
+            setSelectedFundId('')
         } catch (error: any) {
             console.error('Error:', error)
             alert('Error creando transacción: ' + error.message)
@@ -106,7 +115,7 @@ export default function NewTransactionPage() {
                         <CardHeader>
                             <CardTitle>Registrar Movimiento</CardTitle>
                             <CardDescription>
-                                Registra un ingreso o gasto. El sistema aplicará las reglas de asignación automáticamente.
+                                Registra un ingreso o gasto. Puedes asignarlo a un fondo específico.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -157,10 +166,10 @@ export default function NewTransactionPage() {
 
                                 {/* Marca */}
                                 <div className="space-y-2">
-                                    <Label htmlFor="brand">Marca</Label>
+                                    <Label htmlFor="brand">Marca (Opcional)</Label>
                                     <Select value={selectedBrandId} onValueChange={setSelectedBrandId}>
                                         <SelectTrigger id="brand">
-                                            <SelectValue placeholder="Selecciona una marca (Opcional)" />
+                                            <SelectValue placeholder="Selecciona una marca" />
                                         </SelectTrigger>
                                         <SelectContent>
                                             {brands.map(brand => (
@@ -174,7 +183,7 @@ export default function NewTransactionPage() {
 
                                 {/* Cuenta */}
                                 <div className="space-y-2">
-                                    <Label htmlFor="account">Cuenta</Label>
+                                    <Label htmlFor="account">Cuenta (Origen/Destino)</Label>
                                     <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
                                         <SelectTrigger id="account">
                                             <SelectValue placeholder="Selecciona una cuenta" />
@@ -189,24 +198,40 @@ export default function NewTransactionPage() {
                                     </Select>
                                 </div>
 
+                                {/* FONDO (New Feature) */}
+                                <div className="space-y-2">
+                                    <Label htmlFor="fund" className="text-blue-600 font-medium">Asignar a Fondo (Opcional)</Label>
+                                    <Select value={selectedFundId} onValueChange={setSelectedFundId}>
+                                        <SelectTrigger id="fund" className="border-blue-200 bg-blue-50/50">
+                                            <SelectValue placeholder="Ej: Capital de Inversión, Ahorros..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {funds.map(fund => (
+                                                <SelectItem key={fund.id} value={fund.id}>
+                                                    {fund.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-xs text-muted-foreground">
+                                        Si seleccionas un fondo, el 100% del dinero irá o saldrá de allí.
+                                    </p>
+                                </div>
+
                                 {/* Categoría */}
                                 <div className="space-y-2">
-                                    <Label htmlFor="category">Categoría</Label>
+                                    <Label htmlFor="category">Categoría (Opcional)</Label>
                                     <Input
                                         id="category"
-                                        placeholder="Ej: Venta Landing, Marketing, Reposición"
+                                        placeholder="Ej: Venta Landing, Marketing"
                                         value={category}
                                         onChange={(e) => setCategory(e.target.value)}
                                     />
-                                    <p className="text-sm text-muted-foreground">
-                                        {type === 'income' && '💡 Tip: "Venta Landing" activará la regla de CodelyLabs'}
-                                        {type === 'expense' && '💡 Tip: "Marketing" asignará al fondo de Marketing'}
-                                    </p>
                                 </div>
 
                                 {/* Nota */}
                                 <div className="space-y-2">
-                                    <Label htmlFor="note">Nota (Opcional)</Label>
+                                    <Label htmlFor="note">Nota</Label>
                                     <Textarea
                                         id="note"
                                         placeholder="Descripción adicional..."
